@@ -773,11 +773,11 @@ double* compute_means( double* m, int p, int j )
     {
         width = (p/(2*i));
         band = extract_band( m + width, width, p);
-        means[ 3*j-1 ] = mean_band(band,width);
+        means[ 3*i-1 ] = mean_band(band,width);
         band = extract_band( m + (p*width), width, p);
-        means[ 3*j -2 ] = mean_band(band,width);
+        means[ 3*i -2 ] = mean_band(band,width);
         band = extract_band( (m + width)+(p*width), width, p);
-        means[ 3*(j-1) ] = mean_band(band,width);     
+        means[ 3*(i-1) ] = mean_band(band,width);     
     }
     return(means);
 }
@@ -796,13 +796,244 @@ double* compute_vars( double* m, int p, int j, double* means )
     {
         width = (p/(2*i));
         band = extract_band( m + width, width, p);
-        vars[ 3*j-1 ] = var_band(band,width,means[3*j-1]);
+        vars[ 3*i-1 ] = var_band(band,width,means[3*i-1]);
         band = extract_band( m + (p*width), width, p);
-        vars[ 3*j -2 ] = var_band(band,width, means[3*j-2]);
+        vars[ 3*i -2 ] = var_band(band,width, means[3*i -2]);
         band = extract_band( (m + width)+(p*width), width, p);
-        vars[ 3*(j-1) ] = var_band(band,width, means[3*(j-1)]);     
+        vars[ 3*(i-1) ] = var_band(band,width, means[3*(i-1)]);     
     }
     return(vars);
+}
+
+double log2( double x )
+{
+	return log(x)/log(2);
+}
+
+// Quantizes the signal x of size n with nq quantized values
+// Returns the quantized signal of x
+// See quantlm_idx to get the indexed quantifier for each values of x
+void quantlm(double* x,int n,int nq) {
+  // q is the centroid
+  // qi a i that x[i] is associated to qi
+  // qn is the number of x associated to qi
+  double* q=(double *)calloc(nq,sizeof(double));
+  int* qi=(int *)calloc(n,sizeof(int));
+  int* qn=(int *)calloc(nq,sizeof(int));
+  double dmean=0.0;
+
+  // Uniform initialization of the centroids
+  double xmin=x[0];
+  double xmax=x[0];
+  for (int i=0;i<n;i++) {
+    if (xmin>x[i]) xmin=x[i];
+    if (xmax<x[i]) xmax=x[i];
+  }
+  
+  for (int i=0;i<nq;i++) {
+    q[i]=xmin+(xmax-xmin)*(i+1.0)/(nq+1.0);
+  }
+
+  //printf("init\n");
+
+  for (int i=0;i<100;i++) {
+    //printf ("step %d dmean=%f\n",i,dmean);
+
+    // Clustering - every points is associated with its nearest neighbour
+    for (int i=0;i<nq;i++) qn[i]=0;
+
+    dmean=0.0;
+
+    for (int i=0;i<n;i++) {
+      double distmin=1.0e30;
+      int qdistmin=0;
+      for (int j=0;j<nq;j++) {
+	double d1=(x[i]-q[j]);
+	double dist=d1*d1;
+	if (dist<distmin) {distmin=dist; qdistmin=j;}
+      }
+      qn[qdistmin]++;
+      //printf("i=%d x[i]=%f qi[i]=%d\n",i,x[i],qdistmin);
+      qi[i]=qdistmin;
+      dmean+=distmin;
+    }
+
+    dmean/=n;
+    
+    // Moving centroids in the barycentre of their class
+    for (int i=0;i<nq;i++) {
+      // Empty class
+       if (qn[i]!=0) q[i]=0.0;
+    }
+    for (int i=0;i<n;i++) {
+      int qq=qi[i];
+      q[qq]+=x[i];
+    }
+    for (int i=0;i<nq;i++) {
+      if (qn[i]!=0) q[i]/=qn[i];
+    }
+
+    // Process one empty class
+    // Put the centroid of such class near the biggest class
+    bool running=true;
+    for (int i=0;i<nq && running;i++) {
+      if (qn[i]==0) {
+	int bigq=0;
+
+	for (int j=0;j<nq;j++) {
+	  if (qn[j]>qn[bigq]) bigq=j;
+	}
+	
+	q[i]=q[bigq]+0.00001;
+	running=false;
+      }
+    }
+  }
+
+  //for (int i=0;i<nq;i++) {
+  //  printf("q[%d]=%f nq=%d\n",i,q[i],qn[i]);
+  //}
+
+  for (int i=0;i<n;i++) {
+    //printf("x[%d]=%f qx[%d]=%f\n",i,x[i],i,qi[i]);
+    x[i]=q[qi[i]];
+    //x[i]=qi[i];
+  }
+
+  free(q);
+  free(qi);
+  free(qn);
+}
+
+// Quantizes the signal x of size n with nq quantized values
+// Returns the indexed quantifier of each value of x
+// See quantlm to get the quantized signal
+void quantlm_idx(double* x,int n,int nq) {
+  // q is the centroid
+  // qi a i that x[i] is associated to qi
+  // qn is the number of x associated to qi
+  double* q=(double *)calloc(nq,sizeof(double));
+  int* qi=(int *)calloc(n,sizeof(int));
+  int* qn=(int *)calloc(nq,sizeof(int));
+  double dmean=0.0;
+
+  // Uniform initialization of the centroids
+  double xmin=x[0];
+  double xmax=x[0];
+  for (int i=0;i<n;i++) {
+    if (xmin>x[i]) xmin=x[i];
+    if (xmax<x[i]) xmax=x[i];
+  }
+  
+  for (int i=0;i<nq;i++) {
+    q[i]=xmin+(xmax-xmin)*(i+1.0)/(nq+1.0);
+  }
+
+  for (int i=0;i<100;i++) {
+    //printf ("step %d dmean=%f\n",i,dmean);
+
+    // Clustering - every points is associated with its nearest neighbour
+    for (int i=0;i<nq;i++) qn[i]=0;
+
+    dmean=0.0;
+
+    for (int i=0;i<n;i++) {
+      double distmin=1.0e30;
+      int qdistmin=0;
+      for (int j=0;j<nq;j++) {
+	double d1=(x[i]-q[j]);
+	double dist=d1*d1;
+	if (dist<distmin) {distmin=dist; qdistmin=j;}
+      }
+      qn[qdistmin]++;
+      //printf("i=%d x[i]=%f qi[i]=%d\n",i,x[i],qdistmin);
+      qi[i]=qdistmin;
+      dmean+=distmin;
+    }
+
+    dmean/=n;
+    
+    // Moving centroids in the barycentre of their class
+    for (int i=0;i<nq;i++) {
+      // Empty class
+       if (qn[i]!=0) q[i]=0.0;
+    }
+    for (int i=0;i<n;i++) {
+      int qq=qi[i];
+      q[qq]+=x[i];
+    }
+    for (int i=0;i<nq;i++) {
+      if (qn[i]!=0) q[i]/=qn[i];
+    }
+
+    // Process one empty class
+    // Put the centroid of such class near the biggest class
+    bool running=true;
+    for (int i=0;i<nq && running;i++) {
+      if (qn[i]==0) {
+	int bigq=0;
+
+	for (int j=0;j<nq;j++) {
+	  if (qn[j]>qn[bigq]) bigq=j;
+	}
+	
+	q[i]=q[bigq]+0.00001;
+	running=false;
+      }
+    }
+  }
+
+  //for (int i=0;i<nq;i++) {
+  //  printf("q[%d]=%f nq=%d\n",i,q[i],qn[i]);
+  //}
+
+  for (int i=0;i<n;i++) {
+    //printf("x[%d]=%f qx[%d]=%f\n",i,x[i],i,qi[i]);
+    //x[i]=q[qi[i]];
+    x[i]=qi[i];
+  }
+
+  free(q);
+  free(qi);
+  free(qn);
+}
+
+double PSNR( double* m, int p, double* m2, int p2 )
+{
+	assert( p==p2);
+	double eqm = 0.0f;
+	for(int i = 0 ; i < p ; ++i ) eqm += (m[i]-m2[i])*(m[i]-m2[i]);
+	eqm /= p;
+	return ( 10*log10( 65025.0f/eqm ) );  
+}
+
+double* compute_bandwidth( double* vars, int p, int j, double b )
+{
+int bands = 3*j+1;
+double mu = 1.0f;
+int N = p*p;
+for ( int i = j;
+	i > 0;
+	--i)
+	{
+		width = p / (2*i);
+		size = width*width;
+		sigma = vars[3*i-1] * vars[3*i-1];
+		mu *= pow( sigma, size/N);
+		sigma = vars[3*i-2] * vars[3*i-2];
+		mu *= pow( sigma, size/N);
+		sigma = vars[3*i-3] * vars[3*i-3];
+		mu *= pow( sigma, size/N);
+	}
+double * bi = new double[bands];
+for ( int i = 0 ;
+	i < bands;
+	++i)
+	{
+		sigma = vars[i] * vars[i];
+		bi[i] = b + (1.0f/2.0f)*log2( sigma/mu )
+	}
+return bi;
 }
 
 int main()
