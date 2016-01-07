@@ -1,5 +1,9 @@
 #include "main.h"
+/* *************************************
+UTILS FUNCTIONS : add tab, copy, etc
+**************************************** */
 
+//Add two arrays, result is stored in the first array
 void add_tab( double* tab1, int N, const double* tab2, int M )
 {
     assert( N == M );
@@ -11,6 +15,7 @@ void add_tab( double* tab1, int N, const double* tab2, int M )
     }   
 }
 
+//Display an array of size N
 void print_tab( const double* tab, int N )
 {
     for( int i = 0 ; i < N; i++)
@@ -18,7 +23,7 @@ void print_tab( const double* tab, int N )
     cout << '\n';
 }
 
-
+//Concatenate two arrays, result is stored in a new tab
 double* concat( const double* tab1, int N, const double* tab2, int M)
 {
     double* new_tab = new double[N+M];
@@ -34,6 +39,7 @@ double* concat( const double* tab1, int N, const double* tab2, int M)
     return new_tab; 
 }
 
+//Shallow copy an array, return the copy
 double * copy( const double * tab, int N )
 {
     double * tmp = new double[N];   
@@ -46,24 +52,32 @@ double * copy( const double * tab, int N )
     return tmp;
 }
 
-void interp2( double* sig, int N )
+
+/***************************
+MAIN FUNCTIONS
+****************************/
+
+//Interpolate (factor 2) in place a signal of size N
+void interp2( double* x, int N )
 {
     for (int i = N/2 ; i > 0 ; i--)
     {
-        sig[2*i] = sig[i];
-        sig[i] = 0;
+        x[2*i] = x[i];
+        x[i] = 0;
     }
 }
 
-void decim2( double* sig, int N )
+//Decimate (factor 2) in place a signal of size N
+void decim2( double* x, int N )
 {
     for (int i = 1 ; i <= N/2 ; i++)
     {
-        sig[i] = sig[2*i];
-        sig[2*i] = 0;
+        x[i] = x[2*i];
+        x[2*i] = 0;
     }
 }
 
+//Return the index taking into account the mirror synmetry
 int getIdx( int id, int N )
 {
     if ( id < 0 )
@@ -73,7 +87,8 @@ int getIdx( int id, int N )
     return id;
 }
 
-double* conv( double* sig, int N, double* h, int K )
+//Convolve a signal of size N with a filter of size K
+double* conv( double* x, int N, double* h, int K )
 {
     double* new_sig = new double[N];
     int shift = K/2;
@@ -83,13 +98,14 @@ double* conv( double* sig, int N, double* h, int K )
         for (int k = 0 ; k < K ; k++)
         {
             int index = i - (k - shift);
-            sum += h[k] * sig[getIdx(index,N)];
+            sum += h[k] * x[getIdx(index,N)];
         }
         new_sig[i] = sum;
     }
     return new_sig;
 }
 
+//Haar analysis of a signal of size p
 void analyse_haar( double** x, int p)
 {
     assert( (p%2) == 0 && " p must be a power of 2 " );
@@ -102,6 +118,7 @@ void analyse_haar( double** x, int p)
     *x = concat( xb, p/2, xh, p/2);
 }
 
+//Haar synthesis of a signal of size p
 double* synthese_haar(double* x, int p)
 {
     assert( (p%2) == 0 && " p must be a power of 2 " );
@@ -130,6 +147,7 @@ double* synthese_haar(double* x, int p)
     return yb;
 }
 
+//
 void analyse_97( double** x, int p )
 {
     assert( (p%2) == 0 && " p must be a power of 2 " );
@@ -1014,6 +1032,34 @@ void quantlm_idx(double* x,int n,int nq) {
     free(qn);
 }
 
+
+void quantisizeIDX(double* m, int p, int j, double* b)
+{
+    int width;
+    double* band;
+    width = (p/(2*j));
+    band = extract_band( m, width, p);
+    quantlm_idx( band, width*width, pow(2, b[j] ));
+    push_band(m, width, p, band);
+    
+    for ( int i = j;
+          i > 0;
+          --i)
+    {
+        cout << "band : " << i << endl;
+        width = (p/(2*i));
+        band = extract_band( m + width, width, p);
+        quantlm_idx( band, width*width, pow(2, b[3*i -1] ));
+        push_band(m + width, width, p, band);     
+        band = extract_band( m + (p*width), width, p);
+        quantlm_idx( band, width*width, pow(2, b[3*i -2] ));
+        push_band(m + (p*width), width, p, band);
+        band = extract_band( (m + width)+(p*width), width, p);
+        quantlm_idx( band, width*width, pow(2, b[3*(i-1)] ));
+        push_band( (m+width)+(p*width), width, p, band);   
+    }
+}
+
 void quantisize( double* m, int p, int j, double* b)
 {
     int width;
@@ -1082,9 +1128,27 @@ double* compute_bandwidth( double* vars, int p, int j, double b )
     return bi;
 }
 
+double* make_ramp(int size)
+{
+    double* x = new double[size];
+    for( int i = 0;
+         i < size;
+         ++i)
+    {
+        x[i] = i;
+    }
+    return x;
+}
+
 int main()
 {
-    int N = 4096;
+    double* x = make_ramp(256);
+    double * y = get_signal_from_file( "leleccum.txt" );
+    analyse_97_lifting( x , 256 );
+    analyse_haar( &y, 4096 );
+    print_tab( x, 256);
+
+        /*   int N = 4096;
     uint32_t size = 512;
     uint32_t* size_t = &size;
 
@@ -1118,11 +1182,20 @@ int main()
     iamr( isig_amr, N, 2);
     write_signal_to_file( "osig_amr.txt", isig_amr, N);    
 
-    //amr2D_97( lena, size, 2);
-    quantisize(lena, size, 2, bi);
-    iamr2D_97( lena, size, 2);
-    cout << PSNR( lena, size*size, lena2, size*size);
-    ecrit_bmp256( "output.bmp", size, size, lena);
+
+    quantisizeIDX(lena, size, 2, bi);
+    std::ofstream binary_file("lena.txt", std::ofstream::binary);
+    for ( int i = 0;
+          i < size*size;
+          ++i)
+    {        
+        binary_file.write( (char*) &lena[i], 1 ); 
+    }
+//amr2D_97( lena, size, 2);
+    //quantisize(lena, size, 2, bi);
+    //iamr2D_97( lena, size, 2);
+    //cout << PSNR( lena, size*size, lena2, size*size);
+    //ecrit_bmp256( "output.bmp", size, size, lena);
     
     double * groundTruthSig = get_signal_from_file( "leleccum.txt" );
     double e_haar = error(groundTruthSig, N, osig_haar, N);
@@ -1130,4 +1203,6 @@ int main()
     double e_lift = error(groundTruthSig, N, isig_lift, N);
     double e_amr = error( groundTruthSig, N, isig_amr, N);
     cout << "\n Error haar : " << e_haar << "\n Error 97 : " << e_97 << "\n Error lift : " << e_lift << "\n Error AMR : " << e_amr << endl ;
-}
+
+        */
+    }
